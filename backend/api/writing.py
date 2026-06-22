@@ -48,7 +48,7 @@ def _inject_memories(messages: list[dict], project_id: str | None) -> list[dict]
     return msgs
 
 
-_tool_set_title: str | None = None  # set by memory_set_title, read by frontend
+_tool_set_title: str | None = None  # set by set_chapter_title, read by frontend
 
 
 async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: str | None = None) -> str:
@@ -79,10 +79,10 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
             lines.append(f"  • {m['key']}: {m['content']}{tag_str}")
         return "\n".join(lines)
 
-    elif name == "memory_set_title":
+    elif name == "set_chapter_title":
         title = arguments.get("title", "").strip()
         if not title:
-            return "[memory_set_title Error: missing 'title']"
+            return "[set_chapter_title Error: missing 'title']"
         global _tool_set_title
         _tool_set_title = title
         # Also update the chapter title in the database if chapter_id is known
@@ -91,7 +91,7 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
                 _update_chapter_title(project_id, chapter_id, title=title)
             except Exception:
                 pass
-        return f"[memory_set_title] Chapter title set to: {title}"
+        return f"[set_chapter_title] Chapter title set to: {title}"
 
     elif name == "memory_delete":
         key = arguments.get("key", "").strip()
@@ -101,6 +101,24 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
         if found:
             return f"[memory_delete] Deleted: {key}"
         return f"[memory_delete] Key not found: {key}"
+
+    elif name == "chapter_list":
+        from services.epub_engine import list_chapters
+        chapters = list_chapters(project_id)
+        lines = [f"[chapter_list] 共 {len(chapters)} 章："]
+        for ch in chapters:
+            lines.append(f"  {ch['id']}: {ch['title']}")
+        return "\n".join(lines)
+
+    elif name == "chapter_read":
+        ch_id = arguments.get("chapter_id", "").strip()
+        if not ch_id:
+            return "[chapter_read Error: 缺少 chapter_id]"
+        from services.epub_engine import get_chapter
+        ch = get_chapter(project_id, ch_id)
+        if not ch:
+            return f"[chapter_read Error: 未找到章节 '{ch_id}']"
+        return f"[chapter_read] 第 {ch.get('order', '?')} 章「{ch['title']}」：\n\n{ch.get('content', '')}"
 
     return f"[Tool Error: unknown tool '{name}']"
 
@@ -143,6 +161,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                         stream_cache.append(sid, "tool_status", {
                             "name": pending_tool.name,
                             "arguments": pending_tool.arguments,
+                            "tool_call_id": pending_tool.tool_call_id,
                         })
 
                         results = await asyncio.gather(*tasks)
@@ -153,6 +172,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                                 "name": tc.name,
                                 "arguments": tc.arguments,
                                 "result": result,
+                                "tool_call_id": tc.tool_call_id,
                             })
 
                         # Append assistant message with tool calls + reasoning_content
@@ -249,20 +269,24 @@ async def ai_write(body: WriteRequest):
                         stream_cache.append(sid, "tool_status", {
                             "name": pending_tool.name,
                             "arguments": pending_tool.arguments,
+                            "tool_call_id": pending_tool.tool_call_id,
                         })
                         yield _make_sse("tool_status", {
                             "name": pending_tool.name,
                             "arguments": pending_tool.arguments,
+                            "tool_call_id": pending_tool.tool_call_id,
                         }, sid)
 
                         stream_cache.append(sid, "tool_result", {
                             "name": pending_tool.name,
                             "arguments": pending_tool.arguments,
                             "result": result,
+                            "tool_call_id": pending_tool.tool_call_id,
                         })
                         yield _make_sse("tool_result", {
                             "name": pending_tool.name,
                             "result": result,
+                            "tool_call_id": pending_tool.tool_call_id,
                         }, sid)
 
                         assistant_msg: dict = {"role": "assistant", "content": None, "tool_calls": [{

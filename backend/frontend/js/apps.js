@@ -283,8 +283,26 @@ function buildChatMessages(history) {
     var pending = null;
     for (var i = 0; i < history.length; i++) {
       var m = history[i];
-      if (m.role === 'tool_call' || m.role === 'tool_result') continue;
-      if (m.role === 'thinking') {
+      if (m.role === 'tool_call') {
+        // Convert completed tool_call to assistant.tool_calls + tool result messages
+        if (m.status === 'done' && m.result !== null) {
+          var tcId = m.tool_call_id || 'call_' + i;
+          // Merge preceding thinking into assistant message
+          out.push({
+            role: 'assistant',
+            content: pending || null,
+            tool_calls: [{
+              id: tcId,
+              type: 'function',
+              function: { name: m.name, arguments: m.arguments }
+            }]
+          });
+          out.push({ role: 'tool', tool_call_id: tcId, content: m.result });
+          pending = null;
+        } // else: pending tool_call, skip
+      } else if (m.role === 'tool_result') {
+        continue; // Already handled via tool_call conversion
+      } else if (m.role === 'thinking') {
         pending = (pending || '') + m.content;
       } else if (m.role === 'ai') {
         out.push({ role: 'assistant', content: pending ? pending + '\n\n' + m.content : m.content });
@@ -447,6 +465,9 @@ async function loadWriterWorkspace(win, projectId) {
           '<input class="chapter-title-input" type="text" id="chapterTitleInput" />' +
         '</div>' +
         '<div class="editor-wrap">' +
+          '<div class="editor-toolbar"><span id="saveStatus" style="color:#888;font-size:11px;"></span>' +
+            '<button id="saveBtn" style="margin-left:auto;font-size:11px;padding:1px 8px;">💾 保存</button>' +
+          '</div>' +
           '<textarea id="editorContent" spellcheck="false"></textarea>' +
         '</div>' +
       '</div>' +
@@ -477,6 +498,7 @@ async function loadWriterWorkspace(win, projectId) {
   var memoriesBtn = body.querySelector('#memoriesBtn');
   var clearChatBtn = body.querySelector('#clearChatBtn');
   var stopAutoBtn = body.querySelector('#stopAutoCompleteBtn');
+  var chapterNumDisplay = body.querySelector('#chapterNum');
   stopAutoBtn.onclick = function() { _stopAutoComplete = true; stopAutoBtn.style.display = 'none'; };
 
   async function startAutoComplete() {
@@ -649,6 +671,22 @@ async function loadWriterWorkspace(win, projectId) {
     renderChat();
   }
 
+  function formatChapterTitle(title, chapterNum) {
+    var t = title.trim();
+    if (!t) return '第 ' + chapterNum + ' 章';
+    var prefix = '第 ' + chapterNum + ' 章';
+    // Already has Arabic numeral prefix — replace number, keep suffix
+    var m = t.match(/^第\s*(\d+)\s*章[\s\u3000]*(.*)$/);
+    if (m) { var suffix = m[2].trim(); return suffix ? prefix + ' ' + suffix : prefix; }
+    // Chinese numeral prefix — replace with Arabic
+    m = t.match(/^第[一二三四五六七八九十百千]+章[\s\u3000]*(.*)$/);
+    if (m) { var suffix = m[1].trim(); return suffix ? prefix + ' ' + suffix : prefix; }
+    // Bare number at start — wrap in prefix
+    m = t.match(/^(\d+)[\s\u3000]*(.*)$/);
+    if (m) { var suffix = m[2].trim(); return suffix ? prefix + ' ' + suffix : prefix; }
+    return prefix + ' ' + t;
+  }
+
   function saveCurrentContent() {
     if (!currentChapterId) return;
     var content = editor.value;
@@ -661,6 +699,16 @@ async function loadWriterWorkspace(win, projectId) {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function() { saveCurrentContent(); }, 800);
   });
+
+  // 手动保存按钮
+  var saveBtn = body.querySelector('#saveBtn');
+  var saveStatus = body.querySelector('#saveStatus');
+  saveBtn.onclick = function() {
+    saveCurrentContent();
+    saveStatus.textContent = '✅ 已保存';
+    clearTimeout(saveBtn._statusTimer);
+    saveBtn._statusTimer = setTimeout(function() { saveStatus.textContent = ''; }, 2000);
+  };
 
   // 刷新章节列表
   function refreshChapterList() {
@@ -716,6 +764,10 @@ async function loadWriterWorkspace(win, projectId) {
 
       titleInput.addEventListener('blur', function() {
         var newTitle = titleInput.value.trim() || '未命名章节';
+        var chIdx = -1;
+        for (var k = 0; k < chapters.length; k++) { if (chapters[k].id === chId) { chIdx = k; break; } }
+        if (chIdx >= 0) newTitle = formatChapterTitle(newTitle, chIdx + 1);
+        titleInput.value = newTitle;
         api.put('/projects/' + projectId + '/chapters/' + chId, { title: newTitle }).catch(function() {});
         titleText.textContent = newTitle;
         titleText.style.display = 'inline';
@@ -762,7 +814,6 @@ async function loadWriterWorkspace(win, projectId) {
     var acBtn = chaptersContainer.querySelector('#autoCompleteBtn');
     if (acBtn) { acBtn.onclick = startAutoComplete; }
   }
-  }
 
   bindChapterEvents();
   await loadChapterContent(currentChapterId);
@@ -775,7 +826,10 @@ async function loadWriterWorkspace(win, projectId) {
     chapterTitleInput.select();
   });
   chapterTitleInput.addEventListener('blur', function() {
+    var idx = chapters.indexOf(currentChapter);
     var newTitle = this.value.trim() || '未命名章节';
+    if (idx >= 0) newTitle = formatChapterTitle(newTitle, idx + 1);
+    this.value = newTitle;
     api.put('/projects/' + projectId + '/chapters/' + currentChapterId, { title: newTitle }).catch(function() {});
     chapterTitleDisplay.textContent = newTitle;
     chapterTitleDisplay.style.display = 'inline';
@@ -786,7 +840,8 @@ async function loadWriterWorkspace(win, projectId) {
     if (e.key === 'Enter') this.blur();
   });
 
-  var _lastSetTitle = null;  // set by memory_set_title tool during streaming
+  var _lastSetTitle = null;  // set by set_chapter_title tool during streaming
+  var _skipAutoFill = false;
 
   // === AI 聊天 ===
   function sendToAI(userMessage) {
@@ -801,7 +856,18 @@ async function loadWriterWorkspace(win, projectId) {
       renderChat();
 
       var customSys = window.getSetting('systemPrompt');
-      var sysContent = (customSys ? customSys + '\n\n' : '') + '续写小说《' + project.title + '》章节"' + currentChapter.title + '"。\n\n' + (currentChapter.content || '');
+      var idx = chapters.indexOf(currentChapter);
+      var prevChs = chapters.slice(Math.max(0, idx - 3), idx);
+      var prevText = prevChs.length
+        ? prevChs.map(function(ch, i) { return '第' + (Math.max(0, idx - 3) + i + 1) + '章 ' + ch.title + '：\n' + (ch.content || '(空)'); }).join('\n\n')
+        : '（无前文章节）';
+      var sysContent = (customSys ? customSys + '\n\n---\n\n' : '') +
+        '书名：' + project.title + '\n作者：' + (project.author || '匿名') + '\n\n' +
+        '当前章节：第 ' + (idx + 1) + ' 章「' + currentChapter.title + '」\n\n' +
+        '大纲：' + (project.outline || '无') + '\n\n' +
+        '设定：' + (project.setting || '无') + '\n\n' +
+        '前文摘要：\n' + prevText + '\n\n---\n\n' +
+        '请根据以上上下文续写当前章节。当前章节已有内容：\n' + (currentChapter.content || '（空）');
       var msgs = [{ role: 'system', content: sysContent }].concat(
         buildChatMessages(currentChatHistory.slice(-10))
       );
@@ -842,21 +908,44 @@ async function loadWriterWorkspace(win, projectId) {
           sendBtn.disabled = false;
           sendBtn.textContent = '发送';
           saveChatHistory(projectId, currentChapterId, currentChatHistory).catch(function(){}).then(function() { resolve(); });
-          if (window.appSettings && window.appSettings.auto_fill) {
+          if (window.appSettings && window.appSettings.auto_fill && !_skipAutoFill) {
             autoFillFromAI();
           }
+          _skipAutoFill = false;
         },
         function(txt) {
           sendBtn.textContent = txt;
         },
         projectId,
         function(e) {
-          // Track memory_set_title for auto-fill
-          if (e.type === 'tool_result' && e.data.name === 'memory_set_title') {
+          if (e.type === 'tool_result' && e.data.name === 'set_chapter_title') {
             _lastSetTitle = e.data.result;
+            var m = e.data.result.match(/set to:\s*(.+)$/);
+            if (m) {
+              var newTitle = m[1].trim();
+              var tidx = chapters.indexOf(currentChapter);
+              if (tidx >= 0) newTitle = formatChapterTitle(newTitle, tidx + 1);
+              chapterTitleDisplay.textContent = newTitle;
+              chapterTitleInput.value = newTitle;
+              var wd = WinMgr.find(win.id);
+              if (wd) {
+                wd.title = '✍️ ' + project.title + ' - ' + newTitle;
+                wd.el.querySelector('.win-title').textContent = wd.title;
+              }
+              // Update sidebar and local state
+              currentChapter.title = newTitle;
+              refreshChapterList();
+            }
           }
           if (e.type === 'tool_status') {
-            currentChatHistory.push({ role: 'tool_call', name: e.data.name, arguments: e.data.arguments, status: 'pending', result: null });
+            currentChatHistory.push({
+              role: 'tool_call',
+              name: e.data.name,
+              arguments: e.data.arguments,
+              tool_call_id: e.data.tool_call_id,
+              status: 'pending',
+              result: null,
+            });
             debouncedSaveHistory();
             renderChat();
           } else if (e.type === 'tool_result') {
@@ -865,6 +954,7 @@ async function loadWriterWorkspace(win, projectId) {
               if (m.role === 'tool_call' && m.name === e.data.name && m.status === 'pending') {
                 m.status = 'done';
                 m.result = e.data.result;
+                if (e.data.tool_call_id) m.tool_call_id = e.data.tool_call_id;
                 debouncedSaveHistory();
                 renderChat();
                 break;
@@ -895,10 +985,10 @@ async function loadWriterWorkspace(win, projectId) {
     }
     if (!lastAi) return;
     var text = lastAi.content.trim();
-    // 优先使用工具设置的标题
+
+    // 尝试提取标题
     var toolTitle = _lastSetTitle;
     if (toolTitle) {
-      // Extract title from "[memory_set_title] Chapter title set to: XXX"
       var m = toolTitle.match(/set to:\s*(.+)$/);
       if (m) {
         var newTitle = m[1].trim();
@@ -907,7 +997,6 @@ async function loadWriterWorkspace(win, projectId) {
         chapterTitleInput.dispatchEvent(new Event('blur'));
       }
     } else {
-      // Fallback: 从正文提取 # Title
       var titleMatch = text.match(/^#\s+(.+?)(?:\n|$)/);
       if (titleMatch) {
         var newTitle = titleMatch[1].trim();
@@ -917,10 +1006,10 @@ async function loadWriterWorkspace(win, projectId) {
         text = text.substring(titleMatch[0].length).trim();
       }
     }
-    // 填入编辑器（去掉标题行）
+    // 填入编辑器
     editor.value += (editor.value ? '\n\n' : '') + text;
     saveCurrentContent();
-    _lastSetTitle = null; // reset
+    _lastSetTitle = null;
   }
 
   // 填入
@@ -938,7 +1027,7 @@ async function loadWriterWorkspace(win, projectId) {
   // 记忆管理
   memoriesBtn.onclick = function() { openMemoryEditor(projectId); };
 
-  // 准备新章节（两阶段：先记忆分析，再续写正文）
+  // 准备新章节（一次请求：记忆管理 + 正文写作）
   prepareBtn.onclick = async function() {
     if (sendingInProgress) return;
     var idx = chapters.indexOf(currentChapter);
@@ -951,43 +1040,16 @@ async function loadWriterWorkspace(win, projectId) {
         }).join('\n\n')
       : '（无前文章节）';
 
-    var context =
+    var message =
       '书名：' + project.title + '\n作者：' + (project.author || '匿名') + '\n\n' +
       '（当前准备续写第 ' + currentNum + ' 章：' + currentChapter.title + '）\n\n' +
       '大纲：' + (project.outline || '无') + '\n设定：' + (project.setting || '无') + '\n\n' +
-      '前 ' + prevChapters.length + ' 章内容：\n' + prevContent;
-
-    // ── 阶段一：分析本章关键信息，存入记忆 ──
-    var phase1 = context + '\n\n' +
-      '【Phase 1: Memory Analysis】\nAnalyze the above context and identify key information that should be remembered across chapters for Chapter ' + currentNum + ' "' + currentChapter.title + '".\n\n' +
-      'Consider:\n' +
-      '- New characters and their traits\n' +
-      '- Important plot developments or twists\n' +
-      '- World-building details\n' +
-      '- Foreshadowing or clues\n\n' +
-      'Use the memory_store function to save each item (key with prefix like char_/plot_/rule_, content starting with [Ch' + currentNum + ']).\n\n' +
-      'After analysis, reply "✅ Analysis complete, ready to write."';
+      '前 ' + prevChapters.length + ' 章内容：\n' + prevContent + '\n\n' +
+      '请按系统提示词的工作流程完成本章创作：先管理记忆（读取/清理/存储），再设置标题，最后输出正文。';
 
     chatInput.value = '';
-    await sendToAI(phase1);
-
-    // ── 阶段二：返回全部记忆，续写正文 ──
-    var memResp = await api.get('/memory/' + projectId);
-    var memList = memResp && memResp.memories ? memResp.memories : [];
-    var memText = '✅ 记忆已确认。当前作品全部记忆：\n\n';
-    if (memList.length === 0) {
-      memText += '（暂无记忆）\n\n';
-    } else {
-      memText += memList.map(function(m) {
-        var tags = m.tags && m.tags.length > 0 ? ' [' + m.tags.join(',') + ']' : '';
-        return '- ' + m.key + '：' + m.content + tags;
-      }).join('\n');
-      memText += '\n\n';
-    }
-    memText += '【Phase 2: Write Chapter】\nBased on the above memories, write Chapter ' + currentNum + ' "' + currentChapter.title + '" in fluent novel style, consistent with previous chapters.\n\n' + context;
-
-    chatInput.value = '';
-    await sendToAI(memText);
+    _skipAutoFill = true;
+    await sendToAI(message);
   };
 
   renderChat();
@@ -1067,12 +1129,17 @@ function openMemoryEditor(projectId) {
 
 // ===== 4. 系统设置 =====
 function openSettings() {
+  var existing = WinMgr.find('settings_win');
+  if (existing) {
+    WinMgr.focus('settings_win');
+    return;
+  }
   var loadBtn =
     '<div style="text-align:center;padding:20px 0;color:#888;">⏳ 加载设置中...</div>';
   var win = WinMgr.create('⚙️ 系统设置', loadBtn, 520, 480, 'settings_win');
   var body = win.el.querySelector('.win-body');
 
-  api.get('/settings').then(function(data) {
+  api.get('/settings?_t=' + Date.now()).then(function(data) {
     data = data || {};
     body.innerHTML =
       '<div style="color:#aaa;margin-bottom:8px;">⚙️ 配置面板（保存到服务器）</div>' +
@@ -1094,12 +1161,18 @@ function openSettings() {
       '</div>' +
       '<div style="margin-top:8px" id="modelList"></div>';
 
+    var defaultPrompt = data.system_prompt || '';
     body.querySelector('#saveSettingsBtn').onclick = function() {
+      var sysPrompt = body.querySelector('#setting_system_prompt').value.trim();
+      if (!sysPrompt) {
+        sysPrompt = defaultPrompt;
+        body.querySelector('#setting_system_prompt').value = defaultPrompt;
+      }
       var s = {
         api_endpoint: body.querySelector('#setting_api_endpoint').value.trim() || 'https://opencode.ai/zen/v1',
         api_key: body.querySelector('#setting_api_key').value.trim(),
         model: body.querySelector('#setting_model').value.trim() || 'deepseek-v4-flash-free',
-        system_prompt: body.querySelector('#setting_system_prompt').value.trim(),
+        system_prompt: sysPrompt,
         auto_fill: body.querySelector('#setting_auto_fill').checked,
       };
       api.put('/settings', s).then(function() {

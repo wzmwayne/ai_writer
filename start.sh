@@ -3,26 +3,20 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND="$ROOT/backend"
-VENV="$ROOT/venv"
+DEPS_OK="$BACKEND/.deps_ok"
 
 echo "================================================"
 echo "  AI Novel Forge — 小说创作工坊启动脚本"
 echo "================================================"
 
-# 1. 虚拟环境
-if [ ! -f "$VENV/bin/python3" ]; then
-    echo "[*] 创建虚拟环境..."
-    python3 -m venv "$VENV"
-fi
-. "$VENV/bin/activate"
-
-# 2. 安装依赖
+# 1. 安装依赖（直接系统安装，venv 在 exFAT 下不可用）
 PIP_MIRROR="-i https://pypi.tuna.tsinghua.edu.cn/simple"
-if [ ! -f "$VENV/.deps_ok" ]; then
+PIP_EXTRA="--break-system-packages"
+if [ ! -f "$DEPS_OK" ]; then
     echo "[*] 安装依赖（清华源）..."
-    pip install $PIP_MIRROR -r "$BACKEND/requirements.txt"
-    pip install $PIP_MIRROR python-dotenv markdown
-    touch "$VENV/.deps_ok"
+    pip3 install $PIP_MIRROR $PIP_EXTRA -r "$BACKEND/requirements.txt"
+    pip3 install $PIP_MIRROR $PIP_EXTRA python-dotenv markdown
+    touch "$DEPS_OK"
 fi
 
 # 3. 数据目录

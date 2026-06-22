@@ -74,7 +74,6 @@ window.WinMgr = (function() {
       startX = e.clientX; startY = e.clientY;
       origLeft = rect.left; origTop = rect.top;
       isDown = true;
-      el.setPointerCapture(e.pointerId);
       bar.style.cursor = 'grabbing';
     }
     function onMove(e) {
@@ -94,7 +93,6 @@ window.WinMgr = (function() {
       if (isDown) {
         isDown = false;
         bar.style.cursor = '';
-        el.releasePointerCapture(e.pointerId);
         var d = find(el.id);
         if (d) saveState(d);
       }
@@ -169,7 +167,6 @@ window.WinMgr = (function() {
         '<div class="win-titlebar">' +
           '<span class="win-title">' + escapeHtml(title) + '</span>' +
           '<button class="win-btn" data-act="min">─</button>' +
-          '<button class="win-btn" data-act="max">☐</button>' +
           '<button class="win-btn close" data-act="close">✕</button>' +
         '</div>' +
         '<div class="win-body">' + html + '</div>';
@@ -203,34 +200,6 @@ window.WinMgr = (function() {
           if (!list[i].min) { next = list[i]; break; }
         }
         if (next) focus(next.id);
-      };
-
-      el.querySelector('[data-act="max"]').onclick = function(e) {
-        e.stopPropagation();
-        if (el.style.width === '100%') {
-          el.style.width = data._w || width + 'px';
-          el.style.height = data._h || height + 'px';
-          el.style.left = data._l || left + 'px';
-          el.style.top = data._t || top + 'px';
-          data.width = parseInt(el.style.width);
-          data.height = parseInt(el.style.height);
-          data.left = parseInt(el.style.left);
-          data.top = parseInt(el.style.top);
-        } else {
-          data._w = el.style.width;
-          data._h = el.style.height;
-          data._l = el.style.left;
-          data._t = el.style.top;
-          el.style.width = '100%';
-          el.style.height = 'calc(100vh - 48px)';
-          el.style.left = '0';
-          el.style.top = '0';
-          data.width = window.innerWidth;
-          data.height = window.innerHeight - 48;
-          data.left = 0;
-          data.top = 0;
-        }
-        saveState(data);
       };
 
       el.querySelector('[data-act="close"]').onclick = function(e) {

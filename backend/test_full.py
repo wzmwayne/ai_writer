@@ -93,7 +93,7 @@ t("Get chapter", _get_chapter)
 # 8. Update chapter
 def _update_chapter():
     r = put(f"/api/projects/{pid}/chapters/{cid}",
-        json={"content": "# 更新\n\n已修改的内容。"})
+        {"content": "# 更新\n\n已修改的内容。"})
     assert r.status_code == 200
     assert "已修改" in r.json()["content"]
 t("Update chapter", _update_chapter)

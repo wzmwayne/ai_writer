@@ -68,22 +68,22 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "memory_store",
-            "description": "Store cross-chapter persistent information (characters, plot, world rules). Content should start with [ChX] indicating chapter origin.",
+            "description": "存储跨章节持久信息（角色、情节、世界观）。content 应以 [ChX] 开头标明章节来源。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "key": {
                         "type": "string",
-                        "description": "Unique identifier in English/pinyin. Prefix like char_/plot_/rule_"
+                        "description": "唯一标识符（英文/拼音）。建议前缀 char_/plot_/rule_"
                     },
                     "content": {
                         "type": "string",
-                        "description": "[ChX] Detailed description of the information to remember"
+                        "description": "[ChX] 需要记住的信息的详细描述"
                     },
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional categorization tags"
+                        "description": "可选分类标签"
                     }
                 },
                 "required": ["key", "content"]
@@ -94,13 +94,13 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "memory_read",
-            "description": "Search stored memories by keyword to retrieve cross-chapter information.",
+            "description": "按关键词搜索已存储的记忆，检索跨章节信息。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search keywords to find matching memories. Use empty string to list all."
+                        "description": "搜索关键词。使用空字符串（\"\"）列出全部记忆。"
                     }
                 },
                 "required": ["query"]
@@ -110,14 +110,14 @@ MEMORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "memory_set_title",
-            "description": "Set the current chapter title BEFORE writing content. Call this first, then write pure chapter body without any title line.",
+            "name": "set_chapter_title",
+            "description": "在写入正文前设置当前章节标题。先调用此工具，然后输出纯净正文（不含标题行）。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {
                         "type": "string",
-                        "description": "The chapter title"
+                        "description": "章节标题"
                     }
                 },
                 "required": ["title"]
@@ -128,16 +128,45 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "memory_delete",
-            "description": "Delete a memory by its key. Use this to clean up outdated or incorrect memories after reading them all.",
+            "description": "按 key 删除记忆。用于在读取全部记忆后清理过期或错误的条目。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "key": {
                         "type": "string",
-                        "description": "The memory key to delete (e.g. char_old, plot_stale)"
+                        "description": "要删除的记忆 key（例如 char_old、plot_stale）"
                     }
                 },
                 "required": ["key"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "chapter_list",
+            "description": "列出当前项目的所有章节，返回章节 ID 和标题。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "chapter_read",
+            "description": "按章节 ID 读取指定章节的完整内容。先用 chapter_list 获取章节 ID。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_id": {
+                        "type": "string",
+                        "description": "要读取的章节 ID（例如 '0001'）"
+                    }
+                },
+                "required": ["chapter_id"]
             }
         }
     }
@@ -147,16 +176,18 @@ MEMORY_TOOLS = [
 class LLMClient:
     def __init__(self, config: LLMConfig):
         self.config = config
-        self._headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-        }
+        self._headers = {"Content-Type": "application/json"}
+        if config.api_key:
+            self._headers["Authorization"] = f"Bearer {config.api_key}"
 
     async def list_models(self) -> list[ModelInfo]:
         async with httpx.AsyncClient(timeout=self.config.timeout) as client:
+            headers = {"Content-Type": "application/json"}
+            if self.config.api_key:
+                headers["Authorization"] = f"Bearer {self.config.api_key}"
             r = await client.get(
                 f"{self.config.base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {self.config.api_key}"},
+                headers=headers,
             )
             r.raise_for_status()
             data = r.json()

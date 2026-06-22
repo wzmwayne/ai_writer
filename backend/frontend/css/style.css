@@ -339,6 +339,15 @@ textarea { resize: vertical; }
     display: flex;
     flex-direction: column;
 }
+.writer-main .editor-wrap .editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-bottom: none;
+}
 .writer-main .editor-wrap textarea {
     flex: 1;
     width: 100%;

@@ -212,14 +212,37 @@ def get_chapter(project_id: str, chapter_id: str) -> Optional[dict]:
     return None
 
 
+def _format_chapter_title(title: str, chapter_num: int) -> str:
+    t = title.strip()
+    if not t:
+        return f"第 {chapter_num} 章"
+    prefix = f"第 {chapter_num} 章"
+    # Already has Arabic numeral prefix — replace number, keep suffix
+    m = re.match(r'^第\s*(\d+)\s*章[\s\u3000]*(.*)', t)
+    if m:
+        suffix = m.group(2).strip()
+        return f"{prefix}{' ' + suffix if suffix else ''}"
+    # Chinese numeral prefix — replace with Arabic
+    m = re.match(r'^第[一二三四五六七八九十百千]+章[\s\u3000]*(.*)', t)
+    if m:
+        suffix = m.group(1).strip()
+        return f"{prefix}{' ' + suffix if suffix else ''}"
+    # Bare number at start — wrap in prefix
+    m = re.match(r'^(\d+)[\s\u3000]*(.*)', t)
+    if m:
+        suffix = m.group(2).strip()
+        return f"{prefix}{' ' + suffix if suffix else ''}"
+    return f"{prefix} {t}"
+
+
 def update_chapter(project_id: str, chapter_id: str, title: Optional[str] = None, content: Optional[str] = None) -> Optional[dict]:
     meta = _load_meta(project_id)
     if not meta:
         return None
-    for entry in meta.get("chapters", []):
+    for i, entry in enumerate(meta.get("chapters", [])):
         if entry["id"] == chapter_id:
             if title is not None:
-                entry["title"] = title
+                entry["title"] = _format_chapter_title(title, i + 1)
             if content is not None:
                 _write_markdown(_chapter_file(project_id, chapter_id), content)
             meta["updated_at"] = datetime.now(timezone.utc).isoformat()
