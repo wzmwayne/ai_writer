@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+backend/novels/
+backend/chats/
+backend/data/
+backend/settings.json
+venv/

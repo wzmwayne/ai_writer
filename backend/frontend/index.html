@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Novel Forge</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ===== 桌面 ===== -->
+<div id="desktop">
+  <aside id="sidebar">
+    <div class="sidebar-title">📂 功能</div>
+    <ul style="list-style:none;margin:10px 0 0;padding:0;">
+      <li class="icon-item active" data-app="overview">📊 主页概览</li>
+      <li class="icon-item" data-app="chat">💬 对话</li>
+      <li class="icon-item" data-app="startwriting">🖋️ 项目与写作</li>
+      <li class="icon-item" data-app="settings">⚙️ 系统设置</li>
+      <li class="icon-item" data-app="logs">📜 操作日志</li>
+      <li class="icon-item" data-app="help">❓ 帮助</li>
+    </ul>
+  </aside>
+
+  <main id="preview">
+    <h3>▶ <span id="previewTitle">系统概览</span></h3>
+    <div id="overviewContent">
+      <div class="info-row">状态：<span class="text-success">● 正常运行</span></div>
+      <div class="info-row" id="statProjects">项目数：<span>加载中...</span></div>
+      <div class="info-row" id="statChapters">章节总数：<span>加载中...</span></div>
+      <div class="info-row" id="statRecent">最近活动：<span>-</span></div>
+      <div style="border-bottom:none;padding-top:12px;color:#888;font-size:11px;">
+        💡 点击左侧「项目与写作」管理项目
+      </div>
+      <div style="margin-top:12px;border-top:1px solid #1a1a1a;padding-top:8px;">
+        <div style="color:#888;font-size:11px;margin-bottom:4px;">📋 最近操作</div>
+        <div id="logFeed"><div style="font-size:11px;color:#555;">暂无操作记录</div></div>
+      </div>
+    </div>
+  </main>
+
+  <footer id="taskbar">
+    <div class="task-items" id="taskItems"></div>
+    <span class="task-clock" id="clock">12:00:00</span>
+  </footer>
+</div>
+
+<!-- ===== 脚本 ===== -->
+<script src="js/api.js?t=2"></script>
+<script src="js/wm.js?t=1"></script>
+<script src="js/apps.js?t=2"></script>
+<script src="js/app.js?t=2"></script>
+</body>
+</html>

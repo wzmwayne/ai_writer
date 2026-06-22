@@ -1,0 +1,449 @@
+/* ====== 全局重置 ====== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: #fff;
+    font-family: monospace;
+    font-size: 12px;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: #555; }
+::-webkit-scrollbar-thumb:hover { background: #888; }
+input, button, textarea, select {
+    background: #000;
+    color: #fff;
+    border: 1px solid #555;
+    font-family: monospace;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 0;
+    outline: none;
+}
+button { cursor: pointer; }
+button:hover { background: #222; }
+textarea { resize: vertical; }
+
+/* ====== 窗口 ====== */
+.window {
+    position: fixed;
+    background: #0a0a0a;
+    border: 1px solid #555;
+    display: flex;
+    flex-direction: column;
+    min-width: 300px;
+    min-height: 150px;
+    z-index: 100;
+}
+.window.active { border-color: #888; }
+.win-titlebar {
+    height: 32px;
+    background: #111;
+    border-bottom: 1px solid #555;
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    cursor: grab;
+    flex-shrink: 0;
+    user-select: none;
+    touch-action: none;
+}
+.win-titlebar:active { cursor: grabbing; }
+.win-title {
+    flex: 1;
+    color: #0f0;
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.win-btn {
+    background: transparent;
+    border: 1px solid #555;
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    text-align: center;
+    margin-left: 2px;
+}
+.win-btn:hover { background: #222; }
+.win-btn.close:hover { background: #c42b2b; }
+.win-body {
+    flex: 1;
+    padding: 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    color: #aaa;
+    font-size: 12px;
+    background: #000;
+}
+
+/* ====== 桌面 ====== */
+#sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 48px;
+    width: 280px;
+    background: #0a0a0a;
+    border-right: 1px solid #555;
+    padding: 10px 0;
+    overflow-y: auto;
+    z-index: 10;
+}
+#sidebar .sidebar-title {
+    padding: 0 16px 10px;
+    color: #aaa;
+    border-bottom: 1px solid #333;
+    font-size: 13px;
+}
+#sidebar .icon-item {
+    padding: 8px 16px;
+    color: #aaa;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    font-size: 13px;
+}
+#sidebar .icon-item:hover { background: #1a1a1a; color: #fff; }
+#sidebar .icon-item.active {
+    background: #1a1a1a;
+    color: #fff;
+    border-left-color: #0f0;
+}
+#preview {
+    position: fixed;
+    left: 280px;
+    top: 0;
+    right: 0;
+    bottom: 48px;
+    background: #000;
+    padding: 16px 20px;
+    overflow-y: auto;
+    z-index: 5;
+}
+#preview h3 {
+    color: #0f0;
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+#preview .info-row {
+    color: #aaa;
+    font-size: 13px;
+    line-height: 1.8;
+    padding: 4px 0;
+    border-bottom: 1px solid #111;
+}
+#taskbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 48px;
+    background: #111;
+    border-top: 1px solid #555;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    z-index: 9999;
+}
+#taskbar .task-items {
+    flex: 1;
+    display: flex;
+    gap: 4px;
+    margin: 0 12px;
+    overflow-x: auto;
+    padding: 2px 0;
+}
+#taskbar .task-item {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 0 12px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 28px;
+    line-height: 28px;
+}
+#taskbar .task-item:hover { background: #1a1a1a; color: #fff; }
+#taskbar .task-item.active {
+    background: #1a3a5a;
+    border-color: #0f0;
+    color: #fff;
+}
+#taskbar .task-item.minimized {
+    opacity: 0.4;
+    text-decoration: line-through;
+}
+#taskbar .task-clock {
+    color: #888;
+    font-size: 12px;
+    flex-shrink: 0;
+    padding-left: 10px;
+}
+
+/* ====== 项目列表窗口 ====== */
+.project-list-layout {
+    display: flex;
+    height: 100%;
+    gap: 6px;
+}
+.project-tabs {
+    width: 140px;
+    border-right: 1px solid #333;
+    padding-right: 4px;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+.project-tabs .tab-item {
+    padding: 4px 6px;
+    cursor: pointer;
+    color: #aaa;
+    border-left: 2px solid transparent;
+}
+.project-tabs .tab-item:hover { background: #1a1a1a; color: #fff; }
+.project-tabs .tab-item.active {
+    background: #1a1a1a;
+    color: #fff;
+    border-left-color: #0f0;
+}
+.project-detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.project-detail textarea {
+    width: 100%;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    color: #eee;
+    padding: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+.project-detail .detail-row { margin-bottom: 6px; }
+.project-detail .detail-row label {
+    color: #888;
+    display: block;
+    margin-bottom: 2px;
+}
+
+/* ====== 写作工作区 ====== */
+.writer-layout {
+    display: flex;
+    height: 100%;
+    gap: 6px;
+}
+.writer-chapters {
+    width: 180px;
+    border-right: 1px solid #333;
+    padding-right: 4px;
+    overflow-y: auto;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+.writer-chapters .ch-item {
+    padding: 4px 6px;
+    cursor: pointer;
+    color: #aaa;
+    border-left: 2px solid transparent;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.writer-chapters .ch-item:hover { background: #1a1a1a; color: #fff; }
+.writer-chapters .ch-item.active {
+    background: #1a1a1a;
+    color: #fff;
+    border-left-color: #0f0;
+}
+.writer-chapters .ch-item .ch-title-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.writer-chapters .ch-item .ch-title-input {
+    flex: 1;
+    background: #000;
+    border: 1px solid #555;
+    color: #fff;
+    font-size: 11px;
+    padding: 0 2px;
+    display: none;
+}
+.writer-chapters .ch-item .ch-edit-icon {
+    color: #666;
+    cursor: pointer;
+    margin-left: 4px;
+}
+.writer-chapters .ch-item .ch-edit-icon:hover { color: #fff; }
+.writer-chapters .ch-item .ch-delete-icon {
+    color: #f55;
+    cursor: pointer;
+    margin-left: 6px;
+    font-weight: bold;
+}
+.writer-chapters .ch-item .ch-delete-icon:hover { color: #ff8888; }
+.writer-chapters .new-ch-btn {
+    margin-top: 6px;
+    background: #111;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 4px 0;
+    text-align: center;
+    cursor: pointer;
+}
+.writer-chapters .new-ch-btn:hover { background: #222; }
+.writer-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.writer-main .top-info {
+    display: flex;
+    gap: 12px;
+    color: #888;
+    border-bottom: 1px solid #333;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.writer-main .top-info .title { color: #0f0; font-size: 14px; }
+.writer-main .top-info .chapter-num { color: #ffb86b; }
+.writer-main .top-info .chapter-title-display {
+    color: #0f0;
+    cursor: pointer;
+}
+.writer-main .top-info .chapter-title-display:hover { text-decoration: underline; }
+.writer-main .top-info .chapter-title-input {
+    background: #000;
+    border: 1px solid #555;
+    color: #fff;
+    font-size: 13px;
+    padding: 0 4px;
+    display: none;
+}
+.writer-main .editor-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.writer-main .editor-wrap textarea {
+    flex: 1;
+    width: 100%;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    color: #eee;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 4px;
+    resize: none;
+    line-height: 1.6;
+}
+.writer-right {
+    width: 280px;
+    background: #0a0a0a;
+    border-left: 1px solid #333;
+    padding: 4px 6px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+.writer-right .chat-history {
+    flex: 1;
+    overflow-y: auto;
+    border-bottom: 1px solid #222;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    min-height: 80px;
+}
+.writer-right .chat-msg {
+    padding: 2px 4px;
+    border-bottom: 1px solid #1a1a1a;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.writer-right .chat-msg.user { color: #0f0; }
+.writer-right .chat-msg.ai { color: #ffb86b; }
+.chat-msg.tool-call {
+    color: #58a6ff;
+    background: rgba(88,166,255,0.08);
+    border-left: 2px solid #58a6ff;
+    font-size: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 2px 4px;
+    border-bottom: 1px solid #1a1a1a;
+}
+.writer-right .chat-msg.tool-call {
+    color: #58a6ff;
+    background: rgba(88,166,255,0.08);
+    border-left: 2px solid #58a6ff;
+    font-size: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.writer-right .chat-msg.thinking {
+    color: #888;
+    font-style: italic;
+    background: rgba(255,167,38,0.06);
+    border-left: 2px solid #888;
+}
+.writer-right .chat-input-area {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.writer-right .chat-input-area input {
+    flex: 1;
+    min-width: 60px;
+    background: #0d0d0d;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 2px 4px;
+    font-size: 11px;
+}
+.writer-right .chat-input-area button {
+    background: #111;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 2px 6px;
+    font-size: 11px;
+}
+.writer-right .chat-input-area .fill-btn {
+    border-color: #0f0;
+    color: #0f0;
+}
+.writer-right .chat-input-area .prepare-btn {
+    border-color: #ffb86b;
+    color: #ffb86b;
+}
+
+/* ====== 通用工具 ====== */
+.text-success { color: #0f0; }
+.text-warning { color: #ffb86b; }
+.text-error { color: #f55; }
+.btn {
+    background: #111;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 4px 12px;
+    font-family: monospace;
+    font-size: 12px;
+    cursor: pointer;
+}
+.btn:hover { background: #222; }
+.btn-primary { border-color: #0f0; color: #0f0; }
+.btn-danger { border-color: #f55; color: #f55; }
