@@ -6,3 +6,4 @@ backend/chats/
 backend/data/
 backend/settings.json
 venv/
+*.rar
