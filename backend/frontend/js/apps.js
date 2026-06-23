@@ -1040,12 +1040,17 @@ async function loadWriterWorkspace(win, projectId) {
         }).join('\n\n')
       : '（无前文章节）';
 
+    var outlineCheck = '';
+    if (project.outline && idx >= 2) {
+      outlineCheck = '\n【大纲合规检查】\n请用 chapter_list + chapter_read 读取前两章（第 ' + idx + ' 章和第 ' + (idx + 1) + ' 章），严格对照以下大纲，逐条检查每章的行为、动作、情节是否已对齐。如果有遗漏或多余的内容，先用 rewrite_lines / replace_text / rewrite_chapter 修正已有章节，确保大纲描述的所有关键事件都已覆盖、没有少写、也没有多写无关情节，然后再续写当前章节。\n\n';
+    }
     var message =
       '书名：' + project.title + '\n作者：' + (project.author || '匿名') + '\n\n' +
       '（当前准备续写第 ' + currentNum + ' 章：' + currentChapter.title + '）\n\n' +
       '大纲：' + (project.outline || '无') + '\n设定：' + (project.setting || '无') + '\n\n' +
       '前 ' + prevChapters.length + ' 章内容：\n' + prevContent + '\n\n' +
-      '请按系统提示词的工作流程完成本章创作：先管理记忆（读取/清理/存储），再设置标题，最后输出正文。';
+      outlineCheck +
+      '请按系统提示词的工作流程完成本章创作：先检查前两章是否符合大纲并修正，再管理记忆（读取/清理/存储），然后设置标题，最后输出正文。';
 
     chatInput.value = '';
     _skipAutoFill = true;

@@ -169,6 +169,81 @@ MEMORY_TOOLS = [
                 "required": ["chapter_id"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rewrite_lines",
+            "description": "重写指定章节的指定行范围[start_line, end_line)。行号从1开始，end_line不包含。用于局部修改章节内容。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_id": {
+                        "type": "string",
+                        "description": "章节 ID（例如 '0003'）"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "起始行号（1-based, inclusive）"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "结束行号（1-based, exclusive）"
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "替换后的新正文内容（多行）"
+                    }
+                },
+                "required": ["chapter_id", "start_line", "end_line", "new_content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_text",
+            "description": "在指定章节中将所有匹配 old_text 的文本替换为 new_text。适合修正错别字、统一术语、修改人名地名等。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_id": {
+                        "type": "string",
+                        "description": "章节 ID（例如 '0003'）"
+                    },
+                    "old_text": {
+                        "type": "string",
+                        "description": "要替换的原文本"
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "替换后的新文本"
+                    }
+                },
+                "required": ["chapter_id", "old_text", "new_text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rewrite_chapter",
+            "description": "【谨慎使用】完全重写指定章节的全部内容。此操作会覆盖已有内容，建议仅在前三项工具无法满足需求时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_id": {
+                        "type": "string",
+                        "description": "章节 ID（例如 '0003'）"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "新的完整章节正文"
+                    }
+                },
+                "required": ["chapter_id", "content"]
+            }
+        }
     }
 ]
 

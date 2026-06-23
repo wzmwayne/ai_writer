@@ -251,6 +251,45 @@ def update_chapter(project_id: str, chapter_id: str, title: Optional[str] = None
     return None
 
 
+def get_chapter_lines(project_id: str, chapter_id: str) -> list[str]:
+    """Return chapter content as list of lines."""
+    ch = get_chapter(project_id, chapter_id)
+    if not ch:
+        return []
+    return ch.get("content", "").splitlines(keepends=True)
+
+
+def rewrite_chapter_lines(project_id: str, chapter_id: str, start_line: int, end_line: int, new_content: str) -> Optional[dict]:
+    """Rewrite lines [start_line, end_line) (1-indexed, exclusive end) with new_content."""
+    ch = get_chapter(project_id, chapter_id)
+    if not ch:
+        return None
+    lines = ch.get("content", "").splitlines(keepends=True)
+    if start_line < 1 or start_line > len(lines):
+        return None
+    if end_line < start_line:
+        end_line = start_line
+    end_line = min(end_line, len(lines) + 1)
+    new_lines = (new_content.rstrip("\n") + "\n").splitlines(keepends=True)
+    result = lines[:start_line - 1] + new_lines + lines[end_line - 1:]
+    new_content_full = "".join(result)
+    update_chapter(project_id, chapter_id, content=new_content_full)
+    return get_chapter(project_id, chapter_id)
+
+
+def replace_chapter_text(project_id: str, chapter_id: str, old_text: str, new_text: str) -> Optional[dict]:
+    """Replace all occurrences of old_text with new_text in a chapter."""
+    ch = get_chapter(project_id, chapter_id)
+    if not ch:
+        return None
+    content = ch.get("content", "")
+    if old_text not in content:
+        return None
+    content = content.replace(old_text, new_text)
+    update_chapter(project_id, chapter_id, content=content)
+    return get_chapter(project_id, chapter_id)
+
+
 def delete_chapter(project_id: str, chapter_id: str) -> bool:
     meta = _load_meta(project_id)
     if not meta:

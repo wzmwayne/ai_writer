@@ -120,6 +120,42 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
             return f"[chapter_read Error: 未找到章节 '{ch_id}']"
         return f"[chapter_read] 第 {ch.get('order', '?')} 章「{ch['title']}」：\n\n{ch.get('content', '')}"
 
+    elif name == "rewrite_lines":
+        ch_id = arguments.get("chapter_id", "").strip()
+        start = arguments.get("start_line", 0)
+        end = arguments.get("end_line", 0)
+        new_content = arguments.get("new_content", "")
+        if not ch_id or not new_content:
+            return "[rewrite_lines Error: 缺少必要参数]"
+        from services.epub_engine import rewrite_chapter_lines
+        result = rewrite_chapter_lines(project_id, ch_id, int(start), int(end), new_content)
+        if result is None:
+            return f"[rewrite_lines Error: 未找到章节 '{ch_id}' 或行号无效]"
+        return f"[rewrite_lines] 第 {result.get('order', '?')} 章「{result['title']}」行 {start}-{end} 已重写"
+
+    elif name == "replace_text":
+        ch_id = arguments.get("chapter_id", "").strip()
+        old_text = arguments.get("old_text", "")
+        new_text = arguments.get("new_text", "")
+        if not ch_id or not old_text:
+            return "[replace_text Error: 缺少必要参数]"
+        from services.epub_engine import replace_chapter_text
+        result = replace_chapter_text(project_id, ch_id, old_text, new_text)
+        if result is None:
+            return f"[replace_text Error: 未找到章节 '{ch_id}' 或未找到匹配文本]"
+        return f"[replace_text] 第 {result.get('order', '?')} 章「{result['title']}」中「{old_text[:20]}」已替换为「{new_text[:20]}」"
+
+    elif name == "rewrite_chapter":
+        ch_id = arguments.get("chapter_id", "").strip()
+        content = arguments.get("content", "")
+        if not ch_id or not content:
+            return "[rewrite_chapter Error: 缺少必要参数]"
+        from services.epub_engine import update_chapter as _update_chapter_content
+        result = _update_chapter_content(project_id, ch_id, content=content)
+        if result is None:
+            return f"[rewrite_chapter Error: 未找到章节 '{ch_id}']"
+        return f"[rewrite_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已全文重写"
+
     return f"[Tool Error: unknown tool '{name}']"
 
 
