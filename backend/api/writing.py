@@ -197,7 +197,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
     tools = MEMORY_TOOLS if body.project_id else None
 
     for _round in range(10):  # max 10 tool call rounds
-        pending_tool: ToolCallEvent | None = None
+        pending_tools: list[ToolCallEvent] = []
         reasoning_parts: list[str] = []
         content_parts: list[str] = []
 
@@ -218,27 +218,25 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                     content_parts.append(event.chunk)
                     stream_cache.append(sid, "content", {"content": event.chunk})
                 elif isinstance(event, ToolCallEvent):
-                    pending_tool = event
+                    pending_tools.append(event)
                 elif isinstance(event, DoneEvent):
-                    if pending_tool:
+                    if pending_tools:
                         tasks = []
-                        tool_calls_list = []
-                        tc = pending_tool
-                        tasks.append(_execute_tool(
-                            body.project_id, tc.name, tc.arguments,
-                            chapter_id=body.chapter_id, messages=messages))
-                        tool_calls_list.append(tc)
+                        for tc in pending_tools:
+                            tasks.append(_execute_tool(
+                                body.project_id, tc.name, tc.arguments,
+                                chapter_id=body.chapter_id, messages=messages))
 
-                        stream_cache.append(sid, "tool_status", {
-                            "name": pending_tool.name,
-                            "arguments": pending_tool.arguments,
-                            "tool_call_id": pending_tool.tool_call_id,
-                        })
+                            stream_cache.append(sid, "tool_status", {
+                                "name": tc.name,
+                                "arguments": tc.arguments,
+                                "tool_call_id": tc.tool_call_id,
+                            })
 
                         results = await asyncio.gather(*tasks)
 
                         # Cache tool_result for client display
-                        for tc, result in zip(tool_calls_list, results):
+                        for tc, result in zip(pending_tools, results):
                             stream_cache.append(sid, "tool_result", {
                                 "name": tc.name,
                                 "arguments": tc.arguments,
@@ -252,7 +250,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                         if reasoning_parts:
                             assistant_msg["reasoning_content"] = "".join(reasoning_parts)
                         api_tool_calls = []
-                        for tc in tool_calls_list:
+                        for tc in pending_tools:
                             api_tool_calls.append({
                                 "id": tc.tool_call_id,
                                 "type": "function",
@@ -262,7 +260,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                         messages.append(assistant_msg)
 
                         # Append tool result messages
-                        for tc, result in zip(tool_calls_list, results):
+                        for tc, result in zip(pending_tools, results):
                             messages.append({
                                 "role": "tool",
                                 "tool_call_id": tc.tool_call_id,
@@ -311,7 +309,7 @@ async def ai_write(body: WriteRequest):
         nonlocal messages
 
         for _round in range(10):
-            pending_tool: ToolCallEvent | None = None
+            pending_tools: list[ToolCallEvent] = []
             reasoning_parts: list[str] = []
             content_parts: list[str] = []
 
@@ -335,51 +333,46 @@ async def ai_write(body: WriteRequest):
                     stream_cache.append(sid, "content", payload)
                     yield _make_sse("content", payload, sid)
                 elif isinstance(event, ToolCallEvent):
-                    pending_tool = event
+                    pending_tools.append(event)
                 elif isinstance(event, DoneEvent):
-                    if pending_tool:
-                        result = await _execute_tool(
-                            body.project_id, pending_tool.name, pending_tool.arguments,
-                            chapter_id=body.chapter_id, messages=messages)
+                    if pending_tools:
+                        # Execute all tools in parallel
+                        tasks = [_execute_tool(
+                            body.project_id, tc.name, tc.arguments,
+                            chapter_id=body.chapter_id, messages=messages) for tc in pending_tools]
+                        results = await asyncio.gather(*tasks)
 
-                        stream_cache.append(sid, "tool_status", {
-                            "name": pending_tool.name,
-                            "arguments": pending_tool.arguments,
-                            "tool_call_id": pending_tool.tool_call_id,
-                        })
-                        yield _make_sse("tool_status", {
-                            "name": pending_tool.name,
-                            "arguments": pending_tool.arguments,
-                            "tool_call_id": pending_tool.tool_call_id,
-                        }, sid)
+                        for tc, result in zip(pending_tools, results):
+                            stream_cache.append(sid, "tool_status", {
+                                "name": tc.name, "arguments": tc.arguments,
+                                "tool_call_id": tc.tool_call_id,
+                            })
+                            yield _make_sse("tool_status", {
+                                "name": tc.name, "arguments": tc.arguments,
+                                "tool_call_id": tc.tool_call_id,
+                            }, sid)
 
-                        stream_cache.append(sid, "tool_result", {
-                            "name": pending_tool.name,
-                            "arguments": pending_tool.arguments,
-                            "result": result,
-                            "tool_call_id": pending_tool.tool_call_id,
-                        })
-                        yield _make_sse("tool_result", {
-                            "name": pending_tool.name,
-                            "result": result,
-                            "tool_call_id": pending_tool.tool_call_id,
-                        }, sid)
+                            stream_cache.append(sid, "tool_result", {
+                                "name": tc.name, "arguments": tc.arguments,
+                                "result": result, "tool_call_id": tc.tool_call_id,
+                            })
+                            yield _make_sse("tool_result", {
+                                "name": tc.name, "result": result,
+                                "tool_call_id": tc.tool_call_id,
+                            }, sid)
 
                         assistant_msg: dict = {"role": "assistant"}
                         assistant_msg["content"] = "".join(content_parts) if content_parts else None
-                        assistant_msg["tool_calls"] = [{
-                            "id": pending_tool.tool_call_id,
-                            "type": "function",
-                            "function": {"name": pending_tool.name, "arguments": pending_tool.arguments},
-                        }]
+                        assistant_msg["tool_calls"] = [
+                            {"id": tc.tool_call_id, "type": "function",
+                             "function": {"name": tc.name, "arguments": tc.arguments}}
+                            for tc in pending_tools
+                        ]
                         if reasoning_parts:
                             assistant_msg["reasoning_content"] = "".join(reasoning_parts)
                         messages.append(assistant_msg)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": pending_tool.tool_call_id,
-                            "content": result,
-                        })
+                        for tc, result in zip(pending_tools, results):
+                            messages.append({"role": "tool", "tool_call_id": tc.tool_call_id, "content": result})
                         break  # next round
                     else:
                         payload = {"usage": event.usage, "finish_reason": event.finish_reason}
