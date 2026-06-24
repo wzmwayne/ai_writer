@@ -111,13 +111,17 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "set_chapter_title",
-            "description": "在写入正文前设置当前章节标题。先调用此工具，然后输出纯净正文（不含标题行）。",
+            "description": "设置任意章节的标题。如果不指定 chapter_id 则默认为当前正在写的章节。提供 chapter_id 也可用于修正其他章节的标题。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {
                         "type": "string",
-                        "description": "章节标题"
+                        "description": "章节标题（只需写标题本身，服务器自动补全「第X章」前缀）"
+                    },
+                    "chapter_id": {
+                        "type": "string",
+                        "description": "目标章节 ID（如 '0003'）。不传则默认为当前章节。用于修改其他章节标题时指定。"
                     }
                 },
                 "required": ["title"]
@@ -228,20 +232,20 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "rewrite_chapter",
-            "description": "【谨慎使用】完全重写指定章节的全部内容。此操作会覆盖已有内容，建议仅在前三项工具无法满足需求时使用。",
+            "description": "【写新章专用】将 <starttext{content_id}!>...<!endtext!> 标签中的正文保存到指定章节。服务器自动在对话中查找标签并提取正文。这是唯一可将长篇正文保存到章节的工具——必须先在上一步输出正文标签（<starttext{content_id}!>正文<!endtext!>），再用此工具保存。注意此工具不会输出新内容到流中，它只是保存之前已输出的正文。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chapter_id": {
                         "type": "string",
-                        "description": "章节 ID（例如 '0003'）"
+                        "description": "目标章节 ID（例如 '0003'），必须是已存在的章节"
                     },
-                    "content": {
+                    "content_id": {
                         "type": "string",
-                        "description": "新的完整章节正文"
+                        "description": "正文标签编号。服务器搜索对话中 <starttext{content_id}!>...<!endtext!> 提取正文并写入章节文件。"
                     }
                 },
-                "required": ["chapter_id", "content"]
+                "required": ["chapter_id", "content_id"]
             }
         }
     }

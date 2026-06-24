@@ -537,7 +537,7 @@ async function loadWriterWorkspace(win, projectId) {
           break;
         }
         if (_stopAutoComplete) break;
-        autoFillFromAI();
+        parseAndSaveTaggedContent();
         await new Promise(function(r) { setTimeout(r, 400); });
         // Re-query acStatus after refresh (chaptersContainer was re-rendered)
         acStatus = chaptersContainer.querySelector('#autoCompleteStatus');
@@ -909,7 +909,7 @@ async function loadWriterWorkspace(win, projectId) {
           sendBtn.textContent = '发送';
           saveChatHistory(projectId, currentChapterId, currentChatHistory).catch(function(){}).then(function() { resolve(); });
           if (window.appSettings && window.appSettings.auto_fill && !_skipAutoFill) {
-            autoFillFromAI();
+            parseAndSaveTaggedContent();
           }
           _skipAutoFill = false;
         },
@@ -920,22 +920,34 @@ async function loadWriterWorkspace(win, projectId) {
         function(e) {
           if (e.type === 'tool_result' && e.data.name === 'set_chapter_title') {
             _lastSetTitle = e.data.result;
-            var m = e.data.result.match(/set to:\s*(.+)$/);
-            if (m) {
-              var newTitle = m[1].trim();
-              var tidx = chapters.indexOf(currentChapter);
-              if (tidx >= 0) newTitle = formatChapterTitle(newTitle, tidx + 1);
-              chapterTitleDisplay.textContent = newTitle;
-              chapterTitleInput.value = newTitle;
-              var wd = WinMgr.find(win.id);
-              if (wd) {
-                wd.title = '✍️ ' + project.title + ' - ' + newTitle;
-                wd.el.querySelector('.win-title').textContent = wd.title;
+            // Parse chapter_id and title from result: "Chapter 0003 title set to: 第3章 暗流"
+            var mCh = e.data.result.match(/Chapter (\S+)/);
+            var mTitle = e.data.result.match(/title set to:\s*(.+?)(?:\s*\(|$)/);
+            var targetChId = mCh ? mCh[1] : currentChapterId;
+            var newTitle = mTitle ? mTitle[1].trim() : '';
+            if (newTitle) {
+              // Find target chapter and update its title
+              for (var ci = 0; ci < chapters.length; ci++) {
+                if (chapters[ci].id === targetChId) {
+                  chapters[ci].title = newTitle;
+                  if (targetChId === currentChapterId) {
+                    chapterTitleDisplay.textContent = newTitle;
+                    chapterTitleInput.value = newTitle;
+                    var wd = WinMgr.find(win.id);
+                    if (wd) {
+                      wd.title = '✍️ ' + project.title + ' - ' + newTitle;
+                      wd.el.querySelector('.win-title').textContent = wd.title;
+                    }
+                  }
+                  break;
+                }
               }
-              // Update sidebar and local state
-              currentChapter.title = newTitle;
               refreshChapterList();
             }
+          }
+          if (e.type === 'tool_result' && e.data.name === 'rewrite_chapter') {
+            // Content has been saved server-side; reload display
+            loadChapterContent(currentChapterId);
           }
           if (e.type === 'tool_status') {
             currentChatHistory.push({
@@ -978,42 +990,44 @@ async function loadWriterWorkspace(win, projectId) {
     if (e.key === 'Enter') sendBtn.click();
   });
 
-  function autoFillFromAI() {
-    var lastAi = null;
+  function parseAndSaveTaggedContent() {
+    // Scan chat history for <starttext{id}!>...<!endtext!> tags in AI messages
+    var contentSaved = false;
+    for (var i = 0; i < currentChatHistory.length; i++) {
+      var msg = currentChatHistory[i];
+      if (msg.role !== 'ai') continue;
+      var tagRegex = /<starttext(\d+)!>(.*?)<!endtext!>/gs;
+      var match;
+      while ((match = tagRegex.exec(msg.content)) !== null) {
+        var body = match[2].trim();
+        if (body) {
+          editor.value += (editor.value ? '\n\n' : '') + body;
+          contentSaved = true;
+        }
+      }
+    }
+    // Also check if rewrite_chapter was called — server has already saved the content
+    var rewrote = false;
     for (var i = currentChatHistory.length - 1; i >= 0; i--) {
-      if (currentChatHistory[i].role === 'ai') { lastAi = currentChatHistory[i]; break; }
-    }
-    if (!lastAi) return;
-    var text = lastAi.content.trim();
-
-    // 尝试提取标题
-    var toolTitle = _lastSetTitle;
-    if (toolTitle) {
-      var m = toolTitle.match(/set to:\s*(.+)$/);
-      if (m) {
-        var newTitle = m[1].trim();
-        chapterTitleDisplay.textContent = newTitle;
-        chapterTitleInput.value = newTitle;
-        chapterTitleInput.dispatchEvent(new Event('blur'));
-      }
-    } else {
-      var titleMatch = text.match(/^#\s+(.+?)(?:\n|$)/);
-      if (titleMatch) {
-        var newTitle = titleMatch[1].trim();
-        chapterTitleDisplay.textContent = newTitle;
-        chapterTitleInput.value = newTitle;
-        chapterTitleInput.dispatchEvent(new Event('blur'));
-        text = text.substring(titleMatch[0].length).trim();
+      if (currentChatHistory[i].role === 'tool_call' &&
+          currentChatHistory[i].name === 'rewrite_chapter' &&
+          currentChatHistory[i].status === 'done') {
+        rewrote = true;
+        break;
       }
     }
-    // 填入编辑器
-    editor.value += (editor.value ? '\n\n' : '') + text;
-    saveCurrentContent();
-    _lastSetTitle = null;
+    if (contentSaved || rewrote) {
+      // If rewrite_chapter saved server-side, reload content
+      if (rewrote) {
+        loadChapterContent(currentChapterId);
+      } else {
+        saveCurrentContent();
+      }
+    }
   }
 
   // 填入
-  fillBtn.onclick = autoFillFromAI;
+  fillBtn.onclick = parseAndSaveTaggedContent;
 
   // 清空对话
   clearChatBtn.onclick = async function() {

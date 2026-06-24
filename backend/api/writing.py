@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -51,7 +52,7 @@ def _inject_memories(messages: list[dict], project_id: str | None) -> list[dict]
 _tool_set_title: str | None = None  # set by set_chapter_title, read by frontend
 
 
-async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: str | None = None) -> str:
+async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: str | None = None, messages: list | None = None) -> str:
     """Execute a tool call and return a natural language result string."""
     try:
         arguments = json.loads(args) if args else {}
@@ -83,15 +84,33 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
         title = arguments.get("title", "").strip()
         if not title:
             return "[set_chapter_title Error: missing 'title']"
-        global _tool_set_title
-        _tool_set_title = title
-        # Also update the chapter title in the database if chapter_id is known
-        if chapter_id:
+        target_ch_id = (arguments.get("chapter_id") or "").strip() or chapter_id
+        # Auto-format title with "第N章" prefix
+        corrected = False
+        if target_ch_id:
             try:
-                _update_chapter_title(project_id, chapter_id, title=title)
+                from services.epub_engine import list_chapters
+                ch_list = list_chapters(project_id)
+                for i, ch in enumerate(ch_list):
+                    if ch['id'] == target_ch_id:
+                        expected = f"第{i + 1}章"
+                        if not title.startswith(expected):
+                            title = f"{expected} {title}"
+                            corrected = True
+                        break
             except Exception:
                 pass
-        return f"[set_chapter_title] Chapter title set to: {title}"
+        global _tool_set_title
+        _tool_set_title = title
+        if target_ch_id:
+            try:
+                _update_chapter_title(project_id, target_ch_id, title=title)
+            except Exception:
+                pass
+        msg = f"[set_chapter_title] Chapter {target_ch_id} title set to: {title}"
+        if corrected:
+            msg += " (已自动纠正标题格式)"
+        return msg
 
     elif name == "memory_delete":
         key = arguments.get("key", "").strip()
@@ -147,14 +166,26 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
 
     elif name == "rewrite_chapter":
         ch_id = arguments.get("chapter_id", "").strip()
-        content = arguments.get("content", "")
-        if not ch_id or not content:
-            return "[rewrite_chapter Error: 缺少必要参数]"
+        content_id = arguments.get("content_id", "").strip()
+        if not ch_id or not content_id:
+            return "[rewrite_chapter Error: 缺少 chapter_id 或 content_id]"
+        # Search messages for <starttext{content_id}!>...<!endtext!>
+        body = ""
+        pattern = f"<starttext{content_id}!>(.*?)<!endtext!>"
+        if messages:
+            for msg in reversed(messages):
+                text = msg.get("content") or ""
+                m = re.search(pattern, text, re.DOTALL)
+                if m:
+                    body = m.group(1).strip()
+                    break
+        if not body:
+            return f"[rewrite_chapter Error: 未在对话中找到标签 <starttext{content_id}!>...<!endtext!>]"
         from services.epub_engine import update_chapter as _update_chapter_content
-        result = _update_chapter_content(project_id, ch_id, content=content)
+        result = _update_chapter_content(project_id, ch_id, content=body)
         if result is None:
             return f"[rewrite_chapter Error: 未找到章节 '{ch_id}']"
-        return f"[rewrite_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已全文重写"
+        return f"[rewrite_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已通过标签 #{content_id} 保存正文"
 
     return f"[Tool Error: unknown tool '{name}']"
 
@@ -168,6 +199,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
     for _round in range(10):  # max 10 tool call rounds
         pending_tool: ToolCallEvent | None = None
         reasoning_parts: list[str] = []
+        content_parts: list[str] = []
 
         try:
             async for event in client.chat_stream(
@@ -183,6 +215,7 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                     reasoning_parts.append(event.chunk)
                     stream_cache.append(sid, "thinking", {"reasoning": event.chunk})
                 elif isinstance(event, ContentEvent):
+                    content_parts.append(event.chunk)
                     stream_cache.append(sid, "content", {"content": event.chunk})
                 elif isinstance(event, ToolCallEvent):
                     pending_tool = event
@@ -191,7 +224,9 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                         tasks = []
                         tool_calls_list = []
                         tc = pending_tool
-                        tasks.append(_execute_tool(body.project_id, tc.name, tc.arguments, chapter_id=body.chapter_id))
+                        tasks.append(_execute_tool(
+                            body.project_id, tc.name, tc.arguments,
+                            chapter_id=body.chapter_id, messages=messages))
                         tool_calls_list.append(tc)
 
                         stream_cache.append(sid, "tool_status", {
@@ -211,8 +246,9 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                                 "tool_call_id": tc.tool_call_id,
                             })
 
-                        # Append assistant message with tool calls + reasoning_content
-                        assistant_msg: dict = {"role": "assistant", "content": None}
+                        # Append assistant message with content + tool calls + reasoning
+                        assistant_msg: dict = {"role": "assistant"}
+                        assistant_msg["content"] = "".join(content_parts) if content_parts else None
                         if reasoning_parts:
                             assistant_msg["reasoning_content"] = "".join(reasoning_parts)
                         api_tool_calls = []
@@ -277,6 +313,7 @@ async def ai_write(body: WriteRequest):
         for _round in range(10):
             pending_tool: ToolCallEvent | None = None
             reasoning_parts: list[str] = []
+            content_parts: list[str] = []
 
             async for event in client.chat_stream(
                 messages=messages,
@@ -293,6 +330,7 @@ async def ai_write(body: WriteRequest):
                     stream_cache.append(sid, "thinking", payload)
                     yield _make_sse("thinking", payload, sid)
                 elif isinstance(event, ContentEvent):
+                    content_parts.append(event.chunk)
                     payload = {"content": event.chunk}
                     stream_cache.append(sid, "content", payload)
                     yield _make_sse("content", payload, sid)
@@ -300,7 +338,9 @@ async def ai_write(body: WriteRequest):
                     pending_tool = event
                 elif isinstance(event, DoneEvent):
                     if pending_tool:
-                        result = await _execute_tool(body.project_id, pending_tool.name, pending_tool.arguments, chapter_id=body.chapter_id)
+                        result = await _execute_tool(
+                            body.project_id, pending_tool.name, pending_tool.arguments,
+                            chapter_id=body.chapter_id, messages=messages)
 
                         stream_cache.append(sid, "tool_status", {
                             "name": pending_tool.name,
@@ -325,11 +365,13 @@ async def ai_write(body: WriteRequest):
                             "tool_call_id": pending_tool.tool_call_id,
                         }, sid)
 
-                        assistant_msg: dict = {"role": "assistant", "content": None, "tool_calls": [{
+                        assistant_msg: dict = {"role": "assistant"}
+                        assistant_msg["content"] = "".join(content_parts) if content_parts else None
+                        assistant_msg["tool_calls"] = [{
                             "id": pending_tool.tool_call_id,
                             "type": "function",
                             "function": {"name": pending_tool.name, "arguments": pending_tool.arguments},
-                        }]}
+                        }]
                         if reasoning_parts:
                             assistant_msg["reasoning_content"] = "".join(reasoning_parts)
                         messages.append(assistant_msg)
@@ -401,8 +443,10 @@ async def ai_write_non_stream(body: WriteRequest):
             for tc in resp.tool_calls:
                 if tc["type"] == "function":
                     fn = tc["function"]
-                    result = await _execute_tool(body.project_id, fn["name"], fn["arguments"], chapter_id=body.chapter_id)
-                    assistant_msg: dict = {"role": "assistant", "content": None, "tool_calls": [tc]}
+                    result = await _execute_tool(
+                        body.project_id, fn["name"], fn["arguments"],
+                        chapter_id=body.chapter_id, messages=messages)
+                    assistant_msg: dict = {"role": "assistant", "content": resp.content or None, "tool_calls": [tc]}
                     if resp.reasoning_content:
                         assistant_msg["reasoning_content"] = resp.reasoning_content
                     messages.append(assistant_msg)
