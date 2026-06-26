@@ -171,16 +171,19 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
             return "[rewrite_chapter Error: 缺少 chapter_id 或 content_id]"
         # Search messages for <starttext{content_id}!>...<!endtext!>
         body = ""
-        pattern = f"<starttext{content_id}!>(.*?)<!endtext!>"
+        patterns = [f"<starttext{content_id}!>(.*?)<!endtext!>", r"<text!>(.*?)<\?text\?>"]
         if messages:
             for msg in reversed(messages):
                 text = msg.get("content") or ""
-                m = re.search(pattern, text, re.DOTALL)
-                if m:
-                    body = m.group(1).strip()
+                for pat in patterns:
+                    for m in re.finditer(pat, text, re.DOTALL):
+                        cand = m.group(1).strip()
+                        if len(cand) > len(body):
+                            body = cand
+                if body:
                     break
         if not body:
-            return f"[rewrite_chapter Error: 未在对话中找到标签 <starttext{content_id}!>...<!endtext!>]"
+            return f"[rewrite_chapter Error: 未在对话中找到标签]"
         from services.epub_engine import update_chapter as _update_chapter_content
         result = _update_chapter_content(project_id, ch_id, content=body)
         if result is None:
@@ -189,16 +192,47 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
 
     elif name == "write_chapter":
         ch_id = arguments.get("chapter_id", "").strip()
-        content = arguments.get("content", "").strip()
         if not ch_id:
             return "[write_chapter Error: 缺少 chapter_id]"
-        if not content:
-            return "[write_chapter Error: content 为空]"
+        # Search last 3 assistant messages for <starttext!>...<!endtext!> tags
+        body = ""
+        assistant_count = 0
+        if messages:
+            for msg in reversed(messages):
+                if msg.get("role") != "assistant":
+                    continue
+                assistant_count += 1
+                if assistant_count > 3:
+                    break
+                text = msg.get("content") or ""
+                # Find all tag groups
+                candidates = []
+                for m in re.finditer(r'<text!>(.*?)<\?text\?>', text, re.DOTALL):
+                    candidates.append(m.group(1).strip())
+                if candidates:
+                    # Pick the longest body
+                    body = max(candidates, key=len)
+                    break
+        if not body:
+            # Fallback: use assistant message content directly (no tags)
+            assistant_count = 0
+            for msg in reversed(messages):
+                if msg.get("role") != "assistant":
+                    continue
+                assistant_count += 1
+                if assistant_count > 3:
+                    break
+                text = (msg.get("content") or "").strip()
+                if len(text) > 100:
+                    body = text
+                    break
+        if not body:
+            return "[write_chapter Error: 未在对话中找到正文内容]"
         from services.epub_engine import update_chapter as _update_chapter_content
-        result = _update_chapter_content(project_id, ch_id, content=content)
+        result = _update_chapter_content(project_id, ch_id, content=body)
         if result is None:
             return f"[write_chapter Error: 未找到章节 '{ch_id}']"
-        return f"[write_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已保存正文（{len(content)} 字）"
+        return f"[write_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已保存正文（{len(body)} 字）"
 
     return f"[Tool Error: unknown tool '{name}']"
 

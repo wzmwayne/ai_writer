@@ -253,20 +253,16 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_chapter",
-            "description": "【写新章专用】将正文直接保存到指定章节。传递完整正文内容作为 content 参数。注意：这是唯一能将长篇正文保存到章节文件的方式。每次调用都会覆盖章节的现有内容。调用此工具前请确保已在 thinking 中完成正文创作。",
+            "description": "【写新章专用】先用 <text!>正文<?text?> 输出正文，再调用此工具保存。服务器自动从上一轮对话提取标签正文。修改现有章节不要用此工具，如需修改请用 rewrite_lines 或 replace_text。误用会导致现有内容被覆盖。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chapter_id": {
                         "type": "string",
                         "description": "目标章节 ID（例如 '0019'），必须是已存在的章节"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "完整的章节正文内容。这是需要写入章节文件的全部文字，请确保包含完整段落和标点。"
                     }
                 },
-                "required": ["chapter_id", "content"]
+                "required": ["chapter_id"]
             }
         }
     }

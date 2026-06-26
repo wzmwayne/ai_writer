@@ -688,10 +688,10 @@ async function loadWriterWorkspace(win, projectId) {
   }
 
   function saveCurrentContent() {
-    if (!currentChapterId) return;
+    if (!currentChapterId) return Promise.resolve();
     var content = editor.value;
     currentChapter.content = content;
-    api.put('/projects/' + projectId + '/chapters/' + currentChapterId, { content: content }).catch(function() {});
+    return api.put('/projects/' + projectId + '/chapters/' + currentChapterId, { content: content });
   }
 
   // 自动保存（debounce 800ms）
@@ -703,8 +703,8 @@ async function loadWriterWorkspace(win, projectId) {
   // 手动保存按钮
   var saveBtn = body.querySelector('#saveBtn');
   var saveStatus = body.querySelector('#saveStatus');
-  saveBtn.onclick = function() {
-    saveCurrentContent();
+  saveBtn.onclick = async function() {
+    await saveCurrentContent();
     saveStatus.textContent = '✅ 已保存';
     clearTimeout(saveBtn._statusTimer);
     saveBtn._statusTimer = setTimeout(function() { saveStatus.textContent = ''; }, 2000);
@@ -745,8 +745,9 @@ async function loadWriterWorkspace(win, projectId) {
         if (e.target.classList.contains('ch-edit-icon') ||
             e.target.classList.contains('ch-title-input') ||
             e.target.classList.contains('ch-delete-icon')) return;
-        saveCurrentContent();
+        await saveCurrentContent();
         await loadChapterContent(chId);
+        currentChapterId = chId;
       });
 
       // 编辑标题
@@ -947,6 +948,9 @@ async function loadWriterWorkspace(win, projectId) {
           }
           if (e.type === 'tool_result' && e.data.name === 'rewrite_chapter') {
             // Content has been saved server-side; reload display
+            loadChapterContent(currentChapterId);
+          }
+          if (e.type === 'tool_result' && e.data.name === 'write_chapter') {
             loadChapterContent(currentChapterId);
           }
           if (e.type === 'tool_status') {
