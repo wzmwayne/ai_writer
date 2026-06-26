@@ -94,7 +94,13 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
                 for i, ch in enumerate(ch_list):
                     if ch['id'] == target_ch_id:
                         expected = f"第{i + 1}章"
-                        if not title.startswith(expected):
+                        # Normalize: strip existing "第X章" prefix (with or without spaces)
+                        import re as _re
+                        clean = _re.sub(r'^第\s*\d+\s*章\s*', '', title).strip()
+                        if clean != title:
+                            title = clean
+                            corrected = True
+                        if not title.startswith(expected) and not title.startswith(expected.replace('第', '第 ')):
                             title = f"{expected} {title}"
                             corrected = True
                         break
