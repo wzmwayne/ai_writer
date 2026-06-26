@@ -189,7 +189,7 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
                 if body:
                     break
         if not body:
-            return f"[rewrite_chapter Error: 未在对话中找到标签]"
+            return "[rewrite_chapter Error: 未在对话中找到匹配标签]"
         from services.epub_engine import update_chapter as _update_chapter_content
         result = _update_chapter_content(project_id, ch_id, content=body)
         if result is None:
@@ -200,7 +200,7 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
         ch_id = arguments.get("chapter_id", "").strip()
         if not ch_id:
             return "[write_chapter Error: 缺少 chapter_id]"
-        # Search last 3 assistant messages for <starttext!>...<!endtext!> tags
+        # Search last 3 assistant messages for <text!>...<?text?> tags
         body = ""
         assistant_count = 0
         if messages:
@@ -211,29 +211,14 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
                 if assistant_count > 3:
                     break
                 text = msg.get("content") or ""
-                # Find all tag groups
                 candidates = []
                 for m in re.finditer(r'<text!>(.*?)<\?text\?>', text, re.DOTALL):
                     candidates.append(m.group(1).strip())
                 if candidates:
-                    # Pick the longest body
                     body = max(candidates, key=len)
                     break
         if not body:
-            # Fallback: use assistant message content directly (no tags)
-            assistant_count = 0
-            for msg in reversed(messages):
-                if msg.get("role") != "assistant":
-                    continue
-                assistant_count += 1
-                if assistant_count > 3:
-                    break
-                text = (msg.get("content") or "").strip()
-                if len(text) > 100:
-                    body = text
-                    break
-        if not body:
-            return "[write_chapter Error: 未在对话中找到正文内容]"
+            return "[write_chapter Error: 未检测到 <text!>...<?text?> 标签。**必须**在 content 中用 <text!>正文<?text?> 包裹正文再调用此工具。示例：content=\"<text!>这是正文内容<?text?>\"，然后调用 write_chapter。标签不可省略。]"
         from services.epub_engine import update_chapter as _update_chapter_content
         result = _update_chapter_content(project_id, ch_id, content=body)
         if result is None:

@@ -253,7 +253,7 @@ MEMORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_chapter",
-            "description": "【写新章专用】先用 <text!>正文<?text?> 输出正文，再调用此工具保存。服务器自动从上一轮对话提取标签正文。修改现有章节不要用此工具，如需修改请用 rewrite_lines 或 replace_text。误用会导致现有内容被覆盖。",
+            "description": "【写新章专用】先在 content 中用 <text!>正文<?text?> 包裹输出正文（用户将看到流式输出），再调用此工具保存。服务器自动从上一轮对话提取标签正文。无标签 = 正文不会被保存。修改现有章节不要用此工具，如需修改请用 rewrite_lines 或 replace_text。误用会导致现有内容被覆盖。",
             "parameters": {
                 "type": "object",
                 "properties": {
