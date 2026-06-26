@@ -1054,17 +1054,14 @@ async function loadWriterWorkspace(win, projectId) {
         }).join('\n\n')
       : '（无前文章节）';
 
-    var outlineCheck = '';
-    if (project.outline && idx >= 2) {
-      outlineCheck = '\n【检查前两章是否符合大纲】\n';
-    }
     var message =
-      '书名：' + project.title + '\n作者：' + (project.author || '匿名') + '\n\n' +
-      '（当前准备续写第 ' + currentNum + ' 章：' + currentChapter.title + '）\n\n' +
-      '大纲：' + (project.outline || '无') + '\n设定：' + (project.setting || '无') + '\n\n' +
+      '请续写第 ' + currentNum + ' 章「' + currentChapter.title + '」。\n' +
+      '书名：' + project.title + '\n作者：' + (project.author || '匿名') + '\n' +
+      '大纲：' + (project.outline || '无') + '\n' +
+      '设定：' + (project.setting || '无') + '\n\n' +
       '前 ' + prevChapters.length + ' 章内容：\n' + prevContent + '\n\n' +
-      outlineCheck +
-      '请按提示词流程完成本章创作。';
+      (project.outline && idx >= 2 ? '先读前两章检查是否符合大纲。\n' : '') +
+      '按强制流程完成。';
 
     chatInput.value = '';
     _skipAutoFill = true;

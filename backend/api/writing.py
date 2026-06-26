@@ -187,6 +187,19 @@ async def _execute_tool(project_id: str, name: str, args: str, *, chapter_id: st
             return f"[rewrite_chapter Error: 未找到章节 '{ch_id}']"
         return f"[rewrite_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已通过标签 #{content_id} 保存正文"
 
+    elif name == "write_chapter":
+        ch_id = arguments.get("chapter_id", "").strip()
+        content = arguments.get("content", "").strip()
+        if not ch_id:
+            return "[write_chapter Error: 缺少 chapter_id]"
+        if not content:
+            return "[write_chapter Error: content 为空]"
+        from services.epub_engine import update_chapter as _update_chapter_content
+        result = _update_chapter_content(project_id, ch_id, content=content)
+        if result is None:
+            return f"[write_chapter Error: 未找到章节 '{ch_id}']"
+        return f"[write_chapter] 第 {result.get('order', '?')} 章「{result['title']}」已保存正文（{len(content)} 字）"
+
     return f"[Tool Error: unknown tool '{name}']"
 
 
@@ -267,6 +280,12 @@ async def _run_ai_stream(sid: str, body: WriteRequest):
                                 "content": result,
                             })
 
+                        # Switch to write-only mode: remove all tools except rewrite_chapter
+                        tools = [t for t in (tools or []) if t["function"]["name"] == "write_chapter"]
+                        messages.append({
+                            "role": "system",
+                            "content": "进入仅写入模式。所有读取工作已完成。现在只允许调用 write_chapter(chapter_id, content) 将正文保存到章节文件。禁止任何读取操作。"
+                        })
                         break
                     else:
                         stream_cache.append(sid, "done", {"usage": event.usage, "finish_reason": event.finish_reason})
@@ -306,7 +325,7 @@ async def ai_write(body: WriteRequest):
     sid = stream_cache.create()
 
     async def event_stream():
-        nonlocal messages
+        nonlocal messages, tools
 
         for _round in range(10):
             pending_tools: list[ToolCallEvent] = []
@@ -373,6 +392,12 @@ async def ai_write(body: WriteRequest):
                         messages.append(assistant_msg)
                         for tc, result in zip(pending_tools, results):
                             messages.append({"role": "tool", "tool_call_id": tc.tool_call_id, "content": result})
+                        # Switch to write-only mode
+                        tools = [t for t in (tools or []) if t["function"]["name"] == "write_chapter"]
+                        messages.append({
+                            "role": "system",
+                            "content": "进入仅写入模式。所有读取工作已完成。现在只允许调用 write_chapter(chapter_id, content) 将正文保存到章节文件。禁止任何读取操作。"
+                        })
                         break  # next round
                     else:
                         payload = {"usage": event.usage, "finish_reason": event.finish_reason}
@@ -444,6 +469,12 @@ async def ai_write_non_stream(body: WriteRequest):
                         assistant_msg["reasoning_content"] = resp.reasoning_content
                     messages.append(assistant_msg)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+            # Switch to write-only mode after first tool round
+            tools = [t for t in (tools or []) if t["function"]["name"] == "write_chapter"]
+            messages.append({
+                "role": "system",
+                "content": "进入仅写入模式。所有读取工作已完成。现在只允许调用 write_chapter(chapter_id, content) 将正文保存到章节文件。禁止任何读取操作。"
+            })
             continue  # next round
         return {
             "content": resp.content,
